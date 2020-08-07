@@ -1,15 +1,34 @@
-FROM alpine:latest
+FROM debian:stretch
 
-RUN apk add --no-cache bash clamav rsyslog wget clamav-libunrar
+ENV CLAMAV_VERSION 0.102.4
 
-RUN mkdir /var/clamav
-COPY conf /etc/clamav
-COPY bootstrap.sh /var/clamav
-#COPY check.sh /check.sh
+RUN echo "deb http://http.debian.net/debian/ stretch main contrib non-free" > /etc/apt/sources.list && \
+    echo "deb http://http.debian.net/debian/ stretch-updates main contrib non-free" >> /etc/apt/sources.list && \
+    echo "deb http://security.debian.org/ stretch/updates main contrib non-free" >> /etc/apt/sources.list && \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+        clamav-daemon=${CLAMAV_VERSION}* \
+        clamav-freshclam=${CLAMAV_VERSION}* \
+        libclamunrar9 \
+        wget && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-EXPOSE 3310/tcp
-VOLUME ["/var/clamav/store"]
-#USER clam
-CMD ["/var/clamav/bootstrap.sh"]
+RUN wget -O /var/lib/clamav/main.cvd http://database.clamav.net/main.cvd && \
+    wget -O /var/lib/clamav/daily.cvd http://database.clamav.net/daily.cvd && \
+    wget -O /var/lib/clamav/bytecode.cvd http://database.clamav.net/bytecode.cvd && \
+    chown clamav:clamav /var/lib/clamav/*.cvd
 
-#HEALTHCHECK --start-period=500s CMD /check.sh
+RUN mkdir /var/run/clamav && \
+    chown clamav:clamav /var/run/clamav && \
+    chmod 750 /var/run/clamav
+
+RUN sed -i 's/^Foreground .*$/Foreground true/g' /etc/clamav/clamd.conf && \
+    echo "TCPSocket 3310" >> /etc/clamav/clamd.conf && \
+    sed -i 's/^Foreground .*$/Foreground true/g' /etc/clamav/freshclam.conf
+
+EXPOSE 3310
+
+ADD run.sh /
+
+CMD ["/run.sh"]
